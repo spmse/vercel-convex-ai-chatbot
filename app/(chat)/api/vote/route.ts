@@ -29,7 +29,7 @@ export async function GET(request: Request) {
     return new ChatSDKError("forbidden:vote").toResponse();
   }
 
-  const votes = await getVotesByChatId({ id: chatId });
+  const votes = await getVotesByChatId({ chatId });
 
   return Response.json(votes, { status: 200 });
 }

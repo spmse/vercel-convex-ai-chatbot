@@ -76,7 +76,7 @@ export async function GET(
    * but the resumable stream has concluded at this point.
    */
   if (!stream) {
-    const messages = await getMessagesByChatId({ id: chatId });
+    const messages = await getMessagesByChatId({ chatId });
     const mostRecentMessage = messages.at(-1);
 
     if (!mostRecentMessage) {

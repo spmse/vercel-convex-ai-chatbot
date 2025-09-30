@@ -34,7 +34,7 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
   }
 
   const messagesFromDb = await getMessagesByChatId({
-    id,
+    chatId: id,
   });
 
   const uiMessages = convertToUIMessages(messagesFromDb);

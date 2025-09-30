@@ -143,7 +143,7 @@ export async function POST(request: Request) {
       });
     }
 
-    const messagesFromDb = await getMessagesByChatId({ id });
+    const messagesFromDb = await getMessagesByChatId({ chatId: id });
     const uiMessages = [...convertToUIMessages(messagesFromDb), message];
 
     const { longitude, latitude, city, country } = geolocation(request);
@@ -162,7 +162,7 @@ export async function POST(request: Request) {
           id: message.id,
           role: "user",
           parts: message.parts,
-          attachments: [],
+          experimental_attachments: [],
           createdAt: new Date(),
         },
       ],

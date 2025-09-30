@@ -3,7 +3,7 @@ import NextAuth, { type DefaultSession } from "next-auth";
 import type { DefaultJWT } from "next-auth/jwt";
 import Credentials from "next-auth/providers/credentials";
 import { DUMMY_PASSWORD } from "@/lib/constants";
-import { createGuestUser, getUser } from "@/lib/db/queries";
+import { getUser, createGuestUser } from "@/lib/db/convex-queries";
 import { authConfig } from "./auth.config";
 
 export type UserType = "guest" | "regular";
@@ -62,7 +62,11 @@ export const {
           return null;
         }
 
-        return { ...user, type: "regular" };
+        return { 
+          ...user, 
+          id: user._id,
+          type: user.type || "regular" 
+        };
       },
     }),
     Credentials({
@@ -70,7 +74,10 @@ export const {
       credentials: {},
       async authorize() {
         const [guestUser] = await createGuestUser();
-        return { ...guestUser, type: "guest" };
+        return { 
+          ...guestUser, 
+          type: "guest" as UserType 
+        };
       },
     }),
   ],

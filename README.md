@@ -29,10 +29,60 @@
   - Styling with [Tailwind CSS](https://tailwindcss.com)
   - Component primitives from [Radix UI](https://radix-ui.com) for accessibility and flexibility
 - Data Persistence
-  - [Neon Serverless Postgres](https://vercel.com/marketplace/neon) for saving chat history and user data
-  - [Vercel Blob](https://vercel.com/storage/blob) for efficient file storage
+  - [Convex](https://convex.dev) for real-time database, authentication, and file storage
+  - Seamless integration with Next.js and React
 - [Auth.js](https://authjs.dev)
-  - Simple and secure authentication
+  - Simple and secure authentication integrated with Convex
+
+## Convex Backend
+
+This template uses [Convex](https://convex.dev) as the backend platform, providing:
+
+- **Real-time Database**: Reactive queries that automatically update your UI when data changes
+- **File Storage**: Built-in file upload and storage capabilities
+- **Authentication**: Seamless integration with NextAuth.js for user management
+- **Type Safety**: Full TypeScript support from database to frontend
+
+### Convex Integration
+
+The application uses Convex for:
+- **User Management**: Storing user accounts and authentication data
+- **Chat Storage**: Persistent chat history with real-time updates
+- **Message Handling**: Efficient storage and retrieval of chat messages
+- **Document Management**: Artifact and document storage with versioning
+- **File Uploads**: Direct file storage with upload URLs
+- **Vote Tracking**: User feedback and voting on messages
+
+## First Start Setup
+
+To set up the project for the first time:
+
+1. **Install Dependencies**:
+   ```bash
+   pnpm install
+   ```
+
+2. **Set up Convex**:
+   ```bash
+   npx convex dev
+   ```
+   This will:
+   - Create a new Convex project (or connect to existing)
+   - Set up your development environment
+   - Deploy the database schema and functions
+
+3. **Configure Environment Variables**:
+   Copy `.env.example` to `.env.local` and fill in:
+   - AI Gateway or direct LLM provider keys
+   - NextAuth configuration
+   - Convex URL (automatically set by `npx convex dev`)
+
+4. **Start Development**:
+   ```bash
+   pnpm dev
+   ```
+
+The Convex setup will automatically handle database schema deployment and provide you with the necessary environment variables.
 
 ## Model Providers
 
@@ -58,9 +108,19 @@ You will need to use the environment variables [defined in `.env.example`](.env.
 
 > Note: You should not commit your `.env` file or it will expose secrets that will allow others to control access to your various AI and authentication provider accounts.
 
+### Quick Start
+
+1. **Install Dependencies**: `pnpm install`
+2. **Set up Convex**: `npx convex dev` (creates project and deploys schema)
+3. **Configure Environment**: Copy `.env.example` to `.env.local` and fill in required values
+4. **Start Development**: `pnpm dev`
+
+### Detailed Setup (Alternative)
+
 1. Install Vercel CLI: `npm i -g vercel`
 2. Link local instance with Vercel and GitHub accounts (creates `.vercel` directory): `vercel link`
 3. Download your environment variables: `vercel env pull`
+4. Set up Convex development environment: `npx convex dev`
 
 ```bash
 pnpm install

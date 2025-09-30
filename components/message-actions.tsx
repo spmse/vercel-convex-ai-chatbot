@@ -102,6 +102,8 @@ export function PureMessageActions({
                   return [
                     ...votesWithoutCurrent,
                     {
+                      _id: `temp-${Date.now()}`,
+                      _creationTime: Date.now(),
                       chatId,
                       messageId: message.id,
                       isUpvoted: true,
@@ -151,6 +153,8 @@ export function PureMessageActions({
                   return [
                     ...votesWithoutCurrent,
                     {
+                      _id: `temp-${Date.now()}`,
+                      _creationTime: Date.now(),
                       chatId,
                       messageId: message.id,
                       isUpvoted: false,

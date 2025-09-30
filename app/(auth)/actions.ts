@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 
-import { createUser, getUser } from "@/lib/db/queries";
+import { createUser, getUser } from "@/lib/db/convex-queries";
 
 import { signIn } from "./auth";
 

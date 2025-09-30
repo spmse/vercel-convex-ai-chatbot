@@ -1,8 +1,9 @@
-import { put } from "@vercel/blob";
+import { fetchMutation } from "convex/nextjs";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { auth } from "@/app/(auth)/auth";
+import { api } from "@/convex/_generated/api";
 
 // Use Blob instead of File since File is not available in Node.js environment
 const FileSchema = z.object({
@@ -51,11 +52,35 @@ export async function POST(request: Request) {
     const fileBuffer = await file.arrayBuffer();
 
     try {
-      const data = await put(`${filename}`, fileBuffer, {
-        access: "public",
+      // Generate upload URL for Convex
+      const uploadUrl = await fetchMutation(api.files.generateUploadUrl);
+      
+      // Upload file to Convex storage
+      const result = await fetch(uploadUrl, {
+        method: "POST",
+        headers: { "Content-Type": file.type },
+        body: file,
+      });
+      
+      const { storageId } = await result.json();
+      
+      // Save file metadata to database
+      const fileId = await fetchMutation(api.files.saveFile, {
+        storageId,
+        name: filename,
+        type: file.type,
+        size: file.size,
+        userId: session.user.id as any,
       });
 
-      return NextResponse.json(data);
+      return NextResponse.json({
+        storageId,
+        fileId,
+        url: uploadUrl, // This will be replaced with actual file URL when retrieved
+        size: file.size,
+        type: file.type,
+        name: filename,
+      });
     } catch (_error) {
       return NextResponse.json({ error: "Upload failed" }, { status: 500 });
     }
