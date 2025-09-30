@@ -1,6 +1,5 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
-import { auth } from "./auth";
 
 export const createUser = mutation({
   args: {
@@ -44,19 +43,6 @@ export const createGuestUser = mutation({
       type: "guest",
       createdAt: Date.now(),
     });
-    
-    const user = await ctx.db.get(userId);
-    return user;
-  },
-});
-
-export const getCurrentUser = query({
-  handler: async (ctx) => {
-    const userId = await auth.getUserId(ctx);
-    if (!userId) {
-      return null;
-    }
-    
     const user = await ctx.db.get(userId);
     return user;
   },

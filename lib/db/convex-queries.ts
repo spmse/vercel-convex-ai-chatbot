@@ -67,8 +67,8 @@ export type Suggestion = {
 
 // Convert Convex ID format to string format used by the rest of the app
 const convertIdToString = (id: Id<any>): string => id;
-const convertStringToUserId = (id: string): Id<"users"> => id as Id<"users">;
-const convertStringToChatId = (id: string): Id<"chats"> => id as Id<"chats">;
+export const convertStringToUserId = (id: string): Id<"users"> => id as Id<"users">;
+export const convertStringToChatId = (id: string): Id<"chats"> => id as Id<"chats">;
 const convertStringToMessageId = (id: string): Id<"messages"> => id as Id<"messages">;
 const convertStringToDocumentId = (id: string): Id<"documents"> => id as Id<"documents">;
 
@@ -115,19 +115,35 @@ export async function createGuestUser() {
   }
 }
 
+// Helper: resolve a provided chat identifier (external UUID or internal Convex id) to internal Convex _id
+async function resolveChatIdentifier(id: string) {
+  // Try externalId first
+  try {
+    const byExternal = await fetchQuery(api.queries.getChatByExternalId, { externalId: id });
+    if (byExternal) return byExternal._id;
+  } catch {}
+  // Fallback: treat as internal id
+  try {
+    const byInternal = await fetchQuery(api.queries.getChatById, { id: convertStringToChatId(id) });
+    if (byInternal) return byInternal._id;
+  } catch {}
+  throw new ChatSDKError("not_found:chat", "Chat not found");
+}
+
 export async function saveChat({
   id,
   userId,
   title,
   visibility,
 }: {
-  id: string;
+  id: string; // external client id (UUID)
   userId: string;
   title: string;
   visibility: VisibilityType;
 }) {
   try {
     return await fetchMutation(api.queries.saveChat, {
+      externalId: id,
       title,
       userId: convertStringToUserId(userId),
       visibility,
@@ -139,9 +155,8 @@ export async function saveChat({
 
 export async function deleteChatById({ id }: { id: string }) {
   try {
-    await fetchMutation(api.queries.deleteChatById, {
-      id: convertStringToChatId(id),
-    });
+    const internalId = await resolveChatIdentifier(id);
+    await fetchMutation(api.queries.deleteChatById, { id: internalId });
     return { id };
   } catch (_error) {
     throw new ChatSDKError(
@@ -166,36 +181,26 @@ export async function getChatsByUserId({
     const chats = await fetchQuery(api.queries.getChatsByUserId, {
       userId: convertStringToUserId(id),
     });
-
-    // Apply pagination logic (simplified version)
     const sortedChats = chats.sort((a, b) => b.createdAt - a.createdAt);
-    
     let filteredChats = sortedChats;
     let startIndex = 0;
-
     if (startingAfter) {
       const afterIndex = filteredChats.findIndex(
-        (chat) => convertIdToString(chat._id) === startingAfter
+        (chat) => (chat.externalId || convertIdToString(chat._id)) === startingAfter
       );
-      if (afterIndex !== -1) {
-        startIndex = afterIndex + 1;
-      }
+      if (afterIndex !== -1) startIndex = afterIndex + 1;
     } else if (endingBefore) {
       const beforeIndex = filteredChats.findIndex(
-        (chat) => convertIdToString(chat._id) === endingBefore
+        (chat) => (chat.externalId || convertIdToString(chat._id)) === endingBefore
       );
-      if (beforeIndex !== -1) {
-        filteredChats = filteredChats.slice(0, beforeIndex);
-      }
+      if (beforeIndex !== -1) filteredChats = filteredChats.slice(0, beforeIndex);
     }
-
     const paginatedChats = filteredChats.slice(startIndex, startIndex + limit);
     const hasMore = startIndex + limit < filteredChats.length;
-
     return {
       chats: paginatedChats.map((chat) => ({
         ...chat,
-        id: convertIdToString(chat._id),
+        id: chat.externalId || convertIdToString(chat._id),
         userId: convertIdToString(chat.userId),
         createdAt: new Date(chat.createdAt),
       })),
@@ -211,17 +216,17 @@ export async function getChatsByUserId({
 
 export async function getChatById({ id }: { id: string }) {
   try {
-    const chat = await fetchQuery(api.queries.getChatById, {
-      id: convertStringToChatId(id),
-    });
-    
+    const byExternal = await fetchQuery(api.queries.getChatByExternalId, { externalId: id });
+    let chat = byExternal;
     if (!chat) {
-      return null;
+      try {
+        chat = await fetchQuery(api.queries.getChatById, { id: convertStringToChatId(id) });
+      } catch {}
     }
-    
+    if (!chat) return null;
     return {
       ...chat,
-      id: convertIdToString(chat._id),
+      id: chat.externalId || convertIdToString(chat._id),
       userId: convertIdToString(chat.userId),
       createdAt: new Date(chat.createdAt),
     };
@@ -235,14 +240,12 @@ export async function getChatById({ id }: { id: string }) {
 
 export async function getMessagesByChatId({ chatId }: { chatId: string }) {
   try {
-    const messages = await fetchQuery(api.queries.getMessagesByChatId, {
-      chatId: convertStringToChatId(chatId),
-    });
-    
+    const internalId = await resolveChatIdentifier(chatId);
+    const messages = await fetchQuery(api.queries.getMessagesByChatId, { chatId: internalId });
     return messages.map((message) => ({
       ...message,
       id: convertIdToString(message._id),
-      chatId: convertIdToString(message.chatId),
+      chatId: chatId, // preserve external/internal identifier used by UI
       role: message.role as "user" | "assistant" | "system",
       content: message.parts || [],
       parts: message.parts,
@@ -271,8 +274,9 @@ export async function saveMessage({
   attachments: any;
 }) {
   try {
+    const internalChatId = await resolveChatIdentifier(chatId);
     return await fetchMutation(api.queries.saveMessage, {
-      chatId: convertStringToChatId(chatId),
+      chatId: internalChatId,
       role,
       parts,
       attachments,
@@ -376,13 +380,11 @@ export async function saveSuggestion({
 
 export async function getVotesByChatId({ chatId }: { chatId: string }) {
   try {
-    const votes = await fetchQuery(api.queries.getVotesByChatId, {
-      chatId: convertStringToChatId(chatId),
-    });
-    
+    const internalId = await resolveChatIdentifier(chatId);
+    const votes = await fetchQuery(api.queries.getVotesByChatId, { chatId: internalId });
     return votes.map((vote) => ({
       ...vote,
-      chatId: convertIdToString(vote.chatId),
+      chatId,
       messageId: convertIdToString(vote.messageId),
     }));
   } catch (_error) {
@@ -403,8 +405,9 @@ export async function saveVote({
   isUpvoted: boolean;
 }) {
   try {
+    const internalId = await resolveChatIdentifier(chatId);
     return await fetchMutation(api.queries.saveVote, {
-      chatId: convertStringToChatId(chatId),
+      chatId: internalId,
       messageId: convertStringToMessageId(messageId),
       isUpvoted,
     });
@@ -478,20 +481,24 @@ export async function getSuggestionsByDocumentId({
 
 export async function getMessageById({ id }: { id: string }) {
   try {
+    // Message ids are stored as Convex ids; if an arbitrary id is passed that isn't a Convex id, just return []
+    if (!id.startsWith("m") && id.length > 40) { // heuristic safeguard
+      return [];
+    }
     const message = await fetchQuery(api.queries.getMessageById, {
       id: convertStringToMessageId(id),
     });
-    
     if (!message) {
       return [];
     }
-    
-    return [{
-      ...message,
-      id: convertIdToString(message._id),
-      chatId: convertIdToString(message.chatId),
-      createdAt: new Date(message.createdAt),
-    }];
+    return [
+      {
+        ...message,
+        id: convertIdToString(message._id),
+        chatId: convertIdToString(message.chatId),
+        createdAt: new Date(message.createdAt),
+      },
+    ];
   } catch (_error) {
     throw new ChatSDKError(
       "bad_request:database",
@@ -528,8 +535,9 @@ export async function updateChatVisiblityById({
   visibility: VisibilityType;
 }) {
   try {
+    const internalId = await resolveChatIdentifier(chatId);
     await fetchMutation(api.queries.updateChatVisibility, {
-      chatId: convertStringToChatId(chatId),
+      chatId: internalId,
       visibility,
     });
   } catch (_error) {
@@ -545,8 +553,9 @@ export async function saveMessages({ messages }: { messages: DBMessage[] }) {
   try {
     const results = [];
     for (const message of messages) {
+      const internalChatId = await resolveChatIdentifier(message.chatId);
       const result = await fetchMutation(api.queries.saveMessage, {
-        chatId: convertStringToChatId(message.chatId),
+        chatId: internalChatId,
         role: message.role,
         parts: message.parts || message.content,
         attachments: message.experimental_attachments || [],
@@ -569,8 +578,9 @@ export async function voteMessage({
   type: "up" | "down";
 }) {
   try {
+    const internalChatId = await resolveChatIdentifier(chatId);
     return await fetchMutation(api.queries.voteMessage, {
-      chatId: convertStringToChatId(chatId),
+      chatId: internalChatId,
       messageId: convertStringToMessageId(messageId),
       isUpvoted: type === "up",
     });
@@ -579,46 +589,7 @@ export async function voteMessage({
   }
 }
 
-export async function getStreamIdsByChatId({ chatId }: { chatId: string }) {
-  try {
-    const streams = await fetchQuery(api.queries.getStreamsByChatId, {
-      chatId: convertStringToChatId(chatId),
-    });
-    return streams.map((stream) => convertIdToString(stream._id));
-  } catch (_error) {
-    throw new ChatSDKError(
-      "bad_request:database",
-      "Failed to get stream ids by chat id"
-    );
-  }
-}
-
-export async function createStreamId({
-  streamId,
-  chatId,
-}: {
-  streamId: string;
-  chatId: string;
-}) {
-  try {
-    await fetchMutation(api.queries.createStream, {
-      chatId: convertStringToChatId(chatId),
-    });
-  } catch (_error) {
-    throw new ChatSDKError(
-      "bad_request:database",
-      "Failed to create stream id"
-    );
-  }
-}
-
-export async function getMessageCountByUserId({
-  id,
-  differenceInHours,
-}: {
-  id: string;
-  differenceInHours: number;
-}) {
+export async function getMessageCountByUserId({ id, differenceInHours }: { id: string; differenceInHours: number; }) {
   try {
     const count = await fetchQuery(api.queries.getMessageCountByUserId, {
       userId: convertStringToUserId(id),
@@ -633,16 +604,11 @@ export async function getMessageCountByUserId({
   }
 }
 
-export async function updateChatLastContextById({
-  chatId,
-  context,
-}: {
-  chatId: string;
-  context: any;
-}) {
+export async function updateChatLastContextById({ chatId, context }: { chatId: string; context: any; }) {
   try {
+    const internalId = await resolveChatIdentifier(chatId);
     return await fetchMutation(api.queries.updateChatLastContext, {
-      chatId: convertStringToChatId(chatId),
+      chatId: internalId,
       context,
     });
   } catch (error) {
@@ -651,68 +617,28 @@ export async function updateChatLastContextById({
   }
 }
 
-export async function deleteDocumentsByIdAfterTimestamp({
-  id,
-  timestamp,
-}: {
-  id: string;
-  timestamp: Date;
-}) {
+export async function createStreamId({ streamId, chatId }: { streamId: string; chatId: string; }) {
   try {
-    return await fetchMutation(api.queries.deleteDocumentsByIdAfterTimestamp, {
-      documentId: id,
-      timestamp: timestamp.getTime(),
-    });
+    const internalId = await resolveChatIdentifier(chatId);
+    await fetchMutation(api.queries.createStream, { chatId: internalId });
+    return streamId;
   } catch (_error) {
     throw new ChatSDKError(
       "bad_request:database",
-      "Failed to delete documents by id after timestamp"
+      "Failed to create stream id"
     );
   }
 }
 
-export async function getDocumentsById({ id }: { id: string }) {
+export async function getStreamIdsByChatId({ chatId }: { chatId: string }) {
   try {
-    const documents = await fetchQuery(api.queries.getDocumentsByUserId, {
-      userId: convertStringToUserId(id),
-    });
-    
-    return documents.map((doc) => ({
-      ...doc,
-      id: convertIdToString(doc._id),
-      userId: convertIdToString(doc.userId),
-      createdAt: new Date(doc.createdAt),
-    }));
+    const internalId = await resolveChatIdentifier(chatId);
+    const streams = await fetchQuery(api.queries.getStreamsByChatId, { chatId: internalId });
+    return streams.map((stream: any) => convertIdToString(stream._id));
   } catch (_error) {
     throw new ChatSDKError(
       "bad_request:database",
-      "Failed to get documents by id"
-    );
-  }
-}
-
-export async function saveSuggestions({
-  suggestions,
-}: {
-  suggestions: Suggestion[];
-}) {
-  try {
-    const results = [];
-    for (const suggestion of suggestions) {
-      const result = await fetchMutation(api.queries.saveSuggestion, {
-        documentId: convertStringToDocumentId(suggestion.documentId),
-        originalText: suggestion.originalText,
-        suggestedText: suggestion.suggestedText,
-        description: suggestion.description,
-        userId: convertStringToUserId(suggestion.userId),
-      });
-      results.push(result);
-    }
-    return results;
-  } catch (_error) {
-    throw new ChatSDKError(
-      "bad_request:database",
-      "Failed to save suggestions"
+      "Failed to get stream ids by chat id"
     );
   }
 }

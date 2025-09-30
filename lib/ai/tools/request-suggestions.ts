@@ -1,8 +1,7 @@
 import { streamObject, tool, type UIMessageStreamWriter } from "ai";
 import type { Session } from "next-auth";
 import { z } from "zod";
-import { getDocumentById, saveSuggestions } from "@/lib/db/queries";
-import type { Suggestion } from "@/lib/db/schema";
+import { getDocumentById, saveSuggestion } from "@/lib/db/queries";
 import type { ChatMessage } from "@/lib/types";
 import { generateUUID } from "@/lib/utils";
 import { myProvider } from "../providers";
@@ -32,10 +31,7 @@ export const requestSuggestions = ({
         };
       }
 
-      const suggestions: Omit<
-        Suggestion,
-        "userId" | "createdAt" | "documentCreatedAt"
-      >[] = [];
+      const suggestions: any[] = [];
 
       const { elementStream } = streamObject({
         model: myProvider.languageModel("artifact-model"),
@@ -73,14 +69,16 @@ export const requestSuggestions = ({
       if (session.user?.id) {
         const userId = session.user.id;
 
-        await saveSuggestions({
-          suggestions: suggestions.map((suggestion) => ({
-            ...suggestion,
+        for (const suggestion of suggestions) {
+          await saveSuggestion({
+            id: suggestion.id,
+            documentId: suggestion.documentId,
+            originalText: suggestion.originalText,
+            suggestedText: suggestion.suggestedText,
+            description: suggestion.description,
             userId,
-            createdAt: new Date(),
-            documentCreatedAt: document.createdAt,
-          })),
-        });
+          });
+        }
       }
 
       return {

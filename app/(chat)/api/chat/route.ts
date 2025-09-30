@@ -126,8 +126,11 @@ export async function POST(request: Request) {
 
     const chat = await getChatById({ id });
 
-    if (chat) {
-      if (chat.userId !== session.user.id) {
+    // If chat id is not a valid Convex id (UUID from client) we should treat as new chat
+    const existingChat = await getChatById({ id });
+
+    if (existingChat) {
+      if (existingChat.userId !== session.user.id) {
         return new ChatSDKError("forbidden:chat").toResponse();
       }
     } else {

@@ -1,11 +1,8 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
-import { authTables } from "@convex-dev/auth/server";
 
 export default defineSchema({
-  // Add auth tables
-  ...authTables,
-  
+  // Removed Convex auth tables; NextAuth manages auth.
   users: defineTable({
     email: v.string(),
     password: v.optional(v.string()),
@@ -14,12 +11,15 @@ export default defineSchema({
   }).index("by_email", ["email"]),
 
   chats: defineTable({
+    externalId: v.string(), // client-generated UUID
     title: v.string(),
     userId: v.id("users"),
     visibility: v.union(v.literal("public"), v.literal("private")),
     createdAt: v.number(),
     lastContext: v.optional(v.any()), // For AppUsage type
-  }).index("by_user", ["userId"]),
+  })
+    .index("by_user", ["userId"])
+    .index("by_externalId", ["externalId"]),
 
   messages: defineTable({
     chatId: v.id("chats"),

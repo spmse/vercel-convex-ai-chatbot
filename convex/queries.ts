@@ -1,7 +1,7 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 
-// Chat queries
+// Chat queries now support externalId mapping
 export const getChatsByUserId = query({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => {
@@ -9,6 +9,32 @@ export const getChatsByUserId = query({
       .query("chats")
       .withIndex("by_user", (q) => q.eq("userId", args.userId))
       .order("desc")
+      .collect();
+  },
+});
+
+export const getChatByExternalId = query({
+  args: { externalId: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("chats")
+      .withIndex("by_externalId", (q) => q.eq("externalId", args.externalId))
+      .first();
+  },
+});
+
+export const getMessagesByExternalChatId = query({
+  args: { externalId: v.string() },
+  handler: async (ctx, args) => {
+    const chat = await ctx.db
+      .query("chats")
+      .withIndex("by_externalId", (q) => q.eq("externalId", args.externalId))
+      .first();
+    if (!chat) return [];
+    return await ctx.db
+      .query("messages")
+      .withIndex("by_chat", (q) => q.eq("chatId", chat._id))
+      .order("asc")
       .collect();
   },
 });
@@ -22,12 +48,20 @@ export const getChatById = query({
 
 export const saveChat = mutation({
   args: {
+    externalId: v.string(),
     title: v.string(),
     userId: v.id("users"),
     visibility: v.optional(v.union(v.literal("public"), v.literal("private"))),
   },
   handler: async (ctx, args) => {
+    // Upsert by externalId
+    const existing = await ctx.db
+      .query("chats")
+      .withIndex("by_externalId", (q) => q.eq("externalId", args.externalId))
+      .first();
+    if (existing) return existing._id;
     const chatId = await ctx.db.insert("chats", {
+      externalId: args.externalId,
       title: args.title,
       userId: args.userId,
       visibility: args.visibility ?? "private",
@@ -45,12 +79,9 @@ export const deleteChatById = mutation({
       .query("messages")
       .withIndex("by_chat", (q) => q.eq("chatId", args.id))
       .collect();
-    
     for (const message of messages) {
       await ctx.db.delete(message._id);
     }
-    
-    // Delete the chat
     await ctx.db.delete(args.id);
   },
 });
@@ -84,6 +115,7 @@ export const getMessageById = query({
   },
 });
 
+// Message mutations
 export const saveMessage = mutation({
   args: {
     chatId: v.id("chats"),
@@ -92,14 +124,13 @@ export const saveMessage = mutation({
     attachments: v.any(),
   },
   handler: async (ctx, args) => {
-    const messageId = await ctx.db.insert("messages", {
+    return await ctx.db.insert("messages", {
       chatId: args.chatId,
       role: args.role,
       parts: args.parts,
       attachments: args.attachments,
       createdAt: Date.now(),
     });
-    return messageId;
   },
 });
 
@@ -113,7 +144,6 @@ export const deleteMessagesByChatIdAfterTimestamp = mutation({
       .query("messages")
       .withIndex("by_chat", (q) => q.eq("chatId", args.chatId))
       .collect();
-    
     for (const message of messages) {
       if (message.createdAt > args.timestamp) {
         await ctx.db.delete(message._id);
@@ -143,11 +173,10 @@ export const saveVote = mutation({
     // Check if vote already exists
     const existingVote = await ctx.db
       .query("votes")
-      .withIndex("by_chat_and_message", (q) => 
+      .withIndex("by_chat_and_message", (q) =>
         q.eq("chatId", args.chatId).eq("messageId", args.messageId)
       )
       .first();
-    
     if (existingVote) {
       await ctx.db.patch(existingVote._id, { isUpvoted: args.isUpvoted });
       return existingVote._id;
@@ -205,7 +234,6 @@ export const updateDocument = mutation({
     const updates: any = {};
     if (args.title !== undefined) updates.title = args.title;
     if (args.content !== undefined) updates.content = args.content;
-    
     await ctx.db.patch(args.id, updates);
   },
 });
@@ -218,11 +246,9 @@ export const deleteDocumentById = mutation({
       .query("suggestions")
       .withIndex("by_document", (q) => q.eq("documentId", args.id))
       .collect();
-    
     for (const suggestion of suggestions) {
       await ctx.db.delete(suggestion._id);
     }
-    
     // Delete the document
     await ctx.db.delete(args.id);
   },
@@ -321,36 +347,31 @@ export const createStream = mutation({
 });
 
 export const getMessageCountByUserId = query({
-  args: { 
-    userId: v.id("users"), 
-    hoursAgo: v.number() 
+  args: {
+    userId: v.id("users"),
+    hoursAgo: v.number()
   },
   handler: async (ctx, args) => {
     const cutoffTime = Date.now() - (args.hoursAgo * 60 * 60 * 1000);
-    
     // Get all chats for the user
     const userChats = await ctx.db
       .query("chats")
       .withIndex("by_user", (q) => q.eq("userId", args.userId))
       .collect();
-    
     let totalCount = 0;
-    
     for (const chat of userChats) {
       const messages = await ctx.db
         .query("messages")
         .withIndex("by_chat", (q) => q.eq("chatId", chat._id))
-        .filter((q) => 
+        .filter((q) =>
           q.and(
             q.gte(q.field("createdAt"), cutoffTime),
             q.eq(q.field("role"), "user")
           )
         )
         .collect();
-      
       totalCount += messages.length;
     }
-    
     return totalCount;
   },
 });
@@ -376,29 +397,25 @@ export const deleteDocumentsByIdAfterTimestamp = mutation({
     // Get documents to delete by querying with string id
     const docs = await ctx.db
       .query("documents")
-      .filter((q) => 
+      .filter((q) =>
         q.and(
           q.eq(q.field("title"), args.documentId), // Using title as a workaround for string id matching
           q.gt(q.field("createdAt"), args.timestamp)
         )
       )
       .collect();
-    
     // Delete related suggestions first
     for (const doc of docs) {
       const suggestions = await ctx.db
         .query("suggestions")
         .withIndex("by_document", (q) => q.eq("documentId", doc._id))
         .collect();
-      
       for (const suggestion of suggestions) {
         await ctx.db.delete(suggestion._id);
       }
-      
       // Delete the document
       await ctx.db.delete(doc._id);
     }
-    
     return docs;
   },
 });
@@ -413,11 +430,10 @@ export const voteMessage = mutation({
     // Check if vote already exists using the correct index
     const existingVote = await ctx.db
       .query("votes")
-      .withIndex("by_chat_and_message", (q) => 
+      .withIndex("by_chat_and_message", (q) =>
         q.eq("chatId", args.chatId).eq("messageId", args.messageId)
       )
       .first();
-    
     if (existingVote) {
       // Update existing vote
       await ctx.db.patch(existingVote._id, {

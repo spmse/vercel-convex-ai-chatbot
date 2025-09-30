@@ -58,7 +58,7 @@ export type Suggestion = {
   _creationTime: number;
   id: string;
   documentId: string;
-  documentCreatedAt: number;
+  documentCreatedAt?: Date | number; // Allow either a Date instance or timestamp (number) and make optional if missing
   originalText: string;
   suggestedText: string;
   description?: string;
