@@ -3,6 +3,7 @@ import type { UseChatHelpers } from "@ai-sdk/react";
 import equal from "fast-deep-equal";
 import { motion } from "framer-motion";
 import { memo, useState } from "react";
+import { useFeatureFlags } from "@/hooks/use-feature-flags";
 import type { Vote } from "@/lib/db/schema";
 import type { ChatMessage } from "@/lib/types";
 import { cn, sanitizeText } from "@/lib/utils";
@@ -45,6 +46,7 @@ const PurePreviewMessage = ({
   requiresScrollPadding: boolean;
 }) => {
   const [mode, setMode] = useState<"view" | "edit">("view");
+  const { weatherTool } = useFeatureFlags();
 
   const attachmentsFromMessage = message.parts.filter(
     (part) => part.type === "file"
@@ -167,7 +169,10 @@ const PurePreviewMessage = ({
 
             if (type === "tool-getWeather") {
               const { toolCallId, state } = part;
-
+              if (!weatherTool) {
+                // Suppress rendering the tool entirely when disabled.
+                return null;
+              }
               return (
                 <Tool defaultOpen={true} key={toolCallId}>
                   <ToolHeader state={state} type="tool-getWeather" />

@@ -1,5 +1,7 @@
+import { fetchQuery } from "convex/nextjs";
 import { auth } from "@/app/(auth)/auth";
-import { getSuggestionsByDocumentId } from "@/lib/db/queries";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { ChatSDKError } from "@/lib/errors";
 
 export async function GET(request: Request) {
@@ -19,19 +21,22 @@ export async function GET(request: Request) {
     return new ChatSDKError("unauthorized:suggestions").toResponse();
   }
 
-  const suggestions = await getSuggestionsByDocumentId({
-    documentId,
-  });
+  const suggestions = await fetchQuery(
+    api.suggestions.getSuggestionsByDocumentId,
+    {
+      documentId: documentId as Id<"documents">,
+    }
+  );
 
-  const [suggestion] = suggestions;
-
-  if (!suggestion) {
+  if (!suggestions.length) {
     return Response.json([], { status: 200 });
   }
-
-  if (suggestion.userId !== session.user.id) {
+  if (suggestions[0].userId !== (session.user.id as any)) {
     return new ChatSDKError("forbidden:api").toResponse();
   }
 
-  return Response.json(suggestions, { status: 200 });
+  return Response.json(
+    suggestions.map((s) => ({ ...s, id: s._id })),
+    { status: 200 }
+  );
 }

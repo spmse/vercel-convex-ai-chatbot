@@ -7,6 +7,7 @@ import {
   stepCountIs,
   streamText,
 } from "ai";
+import { fetchMutation, fetchQuery } from "convex/nextjs";
 import { unstable_cache as cache } from "next/cache";
 import { after } from "next/server";
 import {
@@ -18,6 +19,9 @@ import { fetchModels } from "tokenlens/fetch";
 import { getUsage } from "tokenlens/helpers";
 import { auth, type UserType } from "@/app/(auth)/auth";
 import type { VisibilityType } from "@/components/visibility-selector";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
+import { resolveChatIdentifier } from "@/convex/chats";
 import { entitlementsByUserType } from "@/lib/ai/entitlements";
 import type { ChatModel } from "@/lib/ai/models";
 import { type RequestHints, systemPrompt } from "@/lib/ai/prompts";
@@ -27,17 +31,8 @@ import { getWeather } from "@/lib/ai/tools/get-weather";
 import { requestSuggestions } from "@/lib/ai/tools/request-suggestions";
 import { updateDocument } from "@/lib/ai/tools/update-document";
 import { isProductionEnvironment } from "@/lib/constants";
-import {
-  createStreamId,
-  deleteChatById,
-  getChatById,
-  getMessageCountByUserId,
-  getMessagesByChatId,
-  saveChat,
-  saveMessages,
-  updateChatLastContextById,
-} from "@/lib/db/queries";
 import { ChatSDKError } from "@/lib/errors";
+import { FEATURE_WEATHER_TOOL } from "@/lib/feature-flags";
 import type { ChatMessage } from "@/lib/types";
 import type { AppUsage } from "@/lib/usage";
 import { convertToUIMessages, generateUUID } from "@/lib/utils";
@@ -115,39 +110,69 @@ export async function POST(request: Request) {
 
     const userType: UserType = session.user.type;
 
-    const messageCount = await getMessageCountByUserId({
-      id: session.user.id,
-      differenceInHours: 24,
+    const messageCount = await fetchQuery(api.stats.getMessageCountByUserId, {
+      userId: session.user.id as any,
+      hoursAgo: 24,
     });
 
     if (messageCount > entitlementsByUserType[userType].maxMessagesPerDay) {
       return new ChatSDKError("rate_limit:chat").toResponse();
     }
 
-    const chat = await getChatById({ id });
-
-    // If chat id is not a valid Convex id (UUID from client) we should treat as new chat
-    const existingChat = await getChatById({ id });
-
-    if (existingChat) {
-      if (existingChat.userId !== session.user.id) {
+    // Attempt external lookup first (UUIDs contain hyphens and cannot be Convex ids)
+    let chatRecord = await fetchQuery(api.chats.getChatByExternalId, {
+      externalId: id,
+    });
+    if (!chatRecord && !id.includes("-")) {
+      // Only attempt internal id if it doesn't look like an external UUID
+      try {
+        chatRecord = await fetchQuery(api.chats.getChatById, {
+          id: id as Id<"chats">,
+        });
+      } catch (_) {
+        // ignore invalid internal id attempts
+      }
+    }
+    if (chatRecord) {
+      if (chatRecord.userId !== (session.user.id as any)) {
         return new ChatSDKError("forbidden:chat").toResponse();
       }
     } else {
       const title = await generateTitleFromUserMessage({
         message,
       });
-
-      await saveChat({
-        id,
-        userId: session.user.id,
+      await fetchMutation(api.chats.saveChat, {
+        externalId: id,
+        userId: session.user.id as any,
         title,
         visibility: selectedVisibilityType,
       });
     }
-
-    const messagesFromDb = await getMessagesByChatId({ chatId: id });
-    const uiMessages = [...convertToUIMessages(messagesFromDb), message];
+    // Load messages (prefer external id path first)
+    // Prefer external messages; fallback to internal only if resolver succeeds
+    let messagesFromDb = await fetchQuery(
+      api.messages.getMessagesByExternalChatId,
+      { externalId: id }
+    );
+    if (messagesFromDb.length === 0) {
+      const internalChatId = await resolveChatIdentifier(id);
+      if (internalChatId) {
+        messagesFromDb = await fetchQuery(api.messages.getMessagesByChatId, {
+          chatId: internalChatId,
+        });
+      }
+    }
+    const normalizedMessages = messagesFromDb.map((m) => ({
+      ...m,
+      id: (m as any)._id,
+      chatId: id,
+      role: m.role as any,
+      content: m.parts || [],
+      parts: m.parts,
+      experimental_attachments: m.attachments,
+      createdAt: new Date(m.createdAt),
+    }));
+    const uiMessages = [...convertToUIMessages(normalizedMessages), message];
 
     const { longitude, latitude, city, country } = geolocation(request);
 
@@ -158,21 +183,26 @@ export async function POST(request: Request) {
       country,
     };
 
-    await saveMessages({
-      messages: [
-        {
-          chatId: id,
-          id: message.id,
-          role: "user",
-          parts: message.parts,
-          experimental_attachments: [],
-          createdAt: new Date(),
-        },
-      ],
+    const internalChatIdResolved = await resolveChatIdentifier(id);
+    const ensuredInternalChatId = internalChatIdResolved
+      ? internalChatIdResolved
+      : await fetchMutation(api.chats.saveChat, {
+          externalId: id,
+          title: "",
+          userId: session.user.id as any,
+          visibility: selectedVisibilityType,
+        });
+    await fetchMutation(api.messages.saveMessage, {
+      chatId: ensuredInternalChatId as any,
+      role: "user",
+      parts: message.parts,
+      attachments: [],
     });
 
-    const streamId = generateUUID();
-    await createStreamId({ streamId, chatId: id });
+    const internalChatId = await resolveChatIdentifier(id); // used for optional resumable context
+    if (internalChatId) {
+      await fetchMutation(api.streams.createStream, { chatId: internalChatId });
+    }
 
     let finalMergedUsage: AppUsage | undefined;
 
@@ -186,15 +216,20 @@ export async function POST(request: Request) {
           experimental_activeTools:
             selectedChatModel === "chat-model-reasoning"
               ? []
-              : [
-                  "getWeather",
+              : ([
+                  ...(FEATURE_WEATHER_TOOL ? ["getWeather"] : []),
                   "createDocument",
                   "updateDocument",
                   "requestSuggestions",
-                ],
+                ] as (
+                  | "getWeather"
+                  | "createDocument"
+                  | "updateDocument"
+                  | "requestSuggestions"
+                )[]),
           experimental_transform: smoothStream({ chunking: "word" }),
           tools: {
-            getWeather,
+            ...(FEATURE_WEATHER_TOOL ? { getWeather } : {}),
             createDocument: createDocument({ session, dataStream }),
             updateDocument: updateDocument({ session, dataStream }),
             requestSuggestions: requestSuggestions({
@@ -250,23 +285,27 @@ export async function POST(request: Request) {
       },
       generateId: generateUUID,
       onFinish: async ({ messages }) => {
-        await saveMessages({
-          messages: messages.map((currentMessage) => ({
-            id: currentMessage.id,
-            role: currentMessage.role,
-            parts: currentMessage.parts,
-            createdAt: new Date(),
-            attachments: [],
-            chatId: id,
-          })),
-        });
+        const internalChatIdFinal = await resolveChatIdentifier(id);
+        if (internalChatIdFinal) {
+          for (const currentMessage of messages) {
+            await fetchMutation(api.messages.saveMessage, {
+              chatId: internalChatIdFinal,
+              role: currentMessage.role,
+              parts: currentMessage.parts,
+              attachments: [],
+            });
+          }
+        }
 
         if (finalMergedUsage) {
           try {
-            await updateChatLastContextById({
-              chatId: id,
-              context: finalMergedUsage,
-            });
+            const internalId = await resolveChatIdentifier(id);
+            if (internalId) {
+              await fetchMutation(api.chats.updateChatLastContext, {
+                chatId: internalId,
+                context: finalMergedUsage,
+              });
+            }
           } catch (err) {
             console.warn("Unable to persist last usage for chat", id, err);
           }
@@ -324,13 +363,27 @@ export async function DELETE(request: Request) {
     return new ChatSDKError("unauthorized:chat").toResponse();
   }
 
-  const chat = await getChatById({ id });
+  let chatRecord = await fetchQuery(api.chats.getChatByExternalId, {
+    externalId: id,
+  });
+  if (!chatRecord) {
+    try {
+      chatRecord = await fetchQuery(api.chats.getChatById, {
+        id: id as Id<"chats">,
+      });
+    } catch (_) {
+      // ignore internal chat id fetch failure
+    }
+  }
 
-  if (chat?.userId !== session.user.id) {
+  if (chatRecord?.userId !== (session.user.id as any)) {
     return new ChatSDKError("forbidden:chat").toResponse();
   }
 
-  const deletedChat = await deleteChatById({ id });
-
-  return Response.json(deletedChat, { status: 200 });
+  const internalId = await resolveChatIdentifier(id);
+  if (!internalId) {
+    return new ChatSDKError("not_found:chat").toResponse();
+  }
+  await fetchMutation(api.chats.deleteChatById, { id: internalId });
+  return Response.json({ id }, { status: 200 });
 }

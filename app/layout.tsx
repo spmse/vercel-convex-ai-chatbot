@@ -3,9 +3,11 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "sonner";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ConvexClientProvider } from "@/lib/convex-provider";
+import { getFeatureFlags } from "@/lib/feature-flags";
 
 import "./globals.css";
 import { SessionProvider } from "next-auth/react";
+import { FeatureFlagsProvider } from "@/hooks/use-feature-flags";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://chat.vercel.ai"),
@@ -54,6 +56,7 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // const featureFlags = getFeatureFlags();
   return (
     <html
       className={`${geist.variable} ${geistMono.variable}`}
@@ -74,15 +77,17 @@ export default function RootLayout({
       </head>
       <body className="antialiased">
         <ConvexClientProvider>
-          <ThemeProvider
-            attribute="class"
-            defaultTheme="system"
-            disableTransitionOnChange
-            enableSystem
-          >
-            <Toaster position="top-center" />
-            <SessionProvider>{children}</SessionProvider>
-          </ThemeProvider>
+          <FeatureFlagsProvider value={getFeatureFlags()}>
+            <ThemeProvider
+              attribute="class"
+              defaultTheme="system"
+              disableTransitionOnChange
+              enableSystem
+            >
+              <Toaster position="top-center" />
+              <SessionProvider>{children}</SessionProvider>
+            </ThemeProvider>
+          </FeatureFlagsProvider>
         </ConvexClientProvider>
       </body>
     </html>

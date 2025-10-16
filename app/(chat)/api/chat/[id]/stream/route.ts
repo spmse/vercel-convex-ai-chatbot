@@ -1,11 +1,10 @@
 import { createUIMessageStream, JsonToSseTransformStream } from "ai";
+import { fetchQuery } from "convex/nextjs";
 import { differenceInSeconds } from "date-fns";
 import { auth } from "@/app/(auth)/auth";
-import {
-  getChatById,
-  getMessagesByChatId,
-  getStreamIdsByChatId,
-} from "@/lib/db/queries";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
+import { resolveChatIdentifier } from "@/convex/chats";
 import type { Chat } from "@/lib/db/schema";
 import { ChatSDKError } from "@/lib/errors";
 import type { ChatMessage } from "@/lib/types";
@@ -37,7 +36,29 @@ export async function GET(
   let chat: Chat | null;
 
   try {
-    chat = await getChatById({ id: chatId });
+    const external = await fetchQuery(api.chats.getChatByExternalId, {
+      externalId: chatId,
+    });
+    const withId = (c: any) =>
+      c
+        ? {
+            ...c,
+            id: c.externalId || c._id,
+            createdAt: new Date(c.createdAt),
+          }
+        : null;
+    let candidate = withId(external);
+    if (!candidate && !chatId.includes("-")) {
+      try {
+        const internal = await fetchQuery(api.chats.getChatById, {
+          id: chatId as Id<"chats">,
+        });
+        candidate = withId(internal);
+      } catch (_internalErr) {
+        // ignore
+      }
+    }
+    chat = candidate as any;
   } catch {
     return new ChatSDKError("not_found:chat").toResponse();
   }
@@ -50,7 +71,13 @@ export async function GET(
     return new ChatSDKError("forbidden:chat").toResponse();
   }
 
-  const streamIds = await getStreamIdsByChatId({ chatId });
+  const internalChatId = await resolveChatIdentifier(chatId);
+  const streamRecords = internalChatId
+    ? await fetchQuery(api.streams.getStreamsByChatId, {
+        chatId: internalChatId,
+      })
+    : [];
+  const streamIds = streamRecords.map((s) => s._id);
 
   if (!streamIds.length) {
     return new ChatSDKError("not_found:stream").toResponse();
@@ -76,8 +103,25 @@ export async function GET(
    * but the resumable stream has concluded at this point.
    */
   if (!stream) {
-    const messages = await getMessagesByChatId({ chatId });
-    const mostRecentMessage = messages.at(-1);
+    let messages = internalChatId
+      ? await fetchQuery(api.messages.getMessagesByChatId, {
+          chatId: internalChatId,
+        })
+      : [];
+    if (!messages.length) {
+      messages = await fetchQuery(api.messages.getMessagesByExternalChatId, {
+        externalId: chatId,
+      });
+    }
+    const normalized = messages.map((m) => ({
+      ...m,
+      id: m._id,
+      chatId,
+      role: m.role,
+      parts: m.parts,
+      createdAt: new Date(m.createdAt),
+    }));
+    const mostRecentMessage = normalized.at(-1);
 
     if (!mostRecentMessage) {
       return new Response(emptyDataStream, { status: 200 });

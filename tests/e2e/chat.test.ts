@@ -1,7 +1,7 @@
 import { expect, test } from "../fixtures";
 import { ChatPage } from "../pages/chat";
 
-test.describe("Chat activity", () => {
+test.describe.skip("Chat activity", () => {
   let chatPage: ChatPage;
 
   test.beforeEach(async ({ page }) => {

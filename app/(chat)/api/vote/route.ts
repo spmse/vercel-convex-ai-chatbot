@@ -1,5 +1,8 @@
+import { fetchMutation, fetchQuery } from "convex/nextjs";
 import { auth } from "@/app/(auth)/auth";
-import { getChatById, getVotesByChatId, voteMessage } from "@/lib/db/queries";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
+import { resolveChatIdentifier } from "@/convex/chats";
 import { ChatSDKError } from "@/lib/errors";
 
 export async function GET(request: Request) {
@@ -19,7 +22,18 @@ export async function GET(request: Request) {
     return new ChatSDKError("unauthorized:vote").toResponse();
   }
 
-  const chat = await getChatById({ id: chatId });
+  let chat = await fetchQuery(api.chats.getChatByExternalId, {
+    externalId: chatId,
+  });
+  if (!chat && !chatId.includes("-")) {
+    try {
+      chat = await fetchQuery(api.chats.getChatById, {
+        id: chatId as Id<"chats">,
+      });
+    } catch (_) {
+      // ignore internal id fetch
+    }
+  }
 
   if (!chat) {
     return new ChatSDKError("not_found:chat").toResponse();
@@ -29,7 +43,11 @@ export async function GET(request: Request) {
     return new ChatSDKError("forbidden:vote").toResponse();
   }
 
-  const votes = await getVotesByChatId({ chatId });
+  const internalId = await resolveChatIdentifier(chatId);
+  const votesRaw = internalId
+    ? await fetchQuery(api.votes.getVotesByChatId, { chatId: internalId })
+    : [];
+  const votes = votesRaw.map((v) => ({ ...v, chatId, messageId: v.messageId }));
 
   return Response.json(votes, { status: 200 });
 }
@@ -55,7 +73,18 @@ export async function PATCH(request: Request) {
     return new ChatSDKError("unauthorized:vote").toResponse();
   }
 
-  const chat = await getChatById({ id: chatId });
+  let chat = await fetchQuery(api.chats.getChatByExternalId, {
+    externalId: chatId,
+  });
+  if (!chat && !chatId.includes("-")) {
+    try {
+      chat = await fetchQuery(api.chats.getChatById, {
+        id: chatId as Id<"chats">,
+      });
+    } catch (_) {
+      // ignore internal id fetch
+    }
+  }
 
   if (!chat) {
     return new ChatSDKError("not_found:vote").toResponse();
@@ -65,11 +94,14 @@ export async function PATCH(request: Request) {
     return new ChatSDKError("forbidden:vote").toResponse();
   }
 
-  await voteMessage({
-    chatId,
-    messageId,
-    type,
-  });
+  const internalId = await resolveChatIdentifier(chatId);
+  if (internalId) {
+    await fetchMutation(api.votes.voteMessage, {
+      chatId: internalId,
+      messageId: messageId as Id<"messages">,
+      isUpvoted: type === "up",
+    });
+  }
 
   return new Response("Message voted", { status: 200 });
 }

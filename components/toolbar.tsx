@@ -18,6 +18,7 @@ import {
   useState,
 } from "react";
 import { useOnClickOutside } from "usehooks-ts";
+import { loadArtifact } from "@/components/artifacts/dynamic-loader";
 import {
   Tooltip,
   TooltipContent,
@@ -25,7 +26,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import type { ChatMessage } from "@/lib/types";
-import { type ArtifactKind, artifactDefinitions } from "./artifact";
+import type { ArtifactKind } from "./artifact";
 import type { ArtifactToolbarItem } from "./create-artifact";
 import { ArrowUpIcon, StopIcon, SummarizeIcon } from "./icons";
 
@@ -360,12 +361,27 @@ const PureToolbar = ({
     }
   }, [status, setIsToolbarVisible]);
 
-  const artifactDefinition = artifactDefinitions.find(
-    (definition) => definition.kind === artifactKind
+  const [artifactDefinition, setArtifactDefinition] = useState<any | null>(
+    null
   );
+  useEffect(() => {
+    let cancelled = false;
+    loadArtifact(artifactKind)
+      .then((def) => {
+        if (!cancelled) {
+          setArtifactDefinition(def);
+        }
+      })
+      .catch(() => {
+        // ignore
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [artifactKind]);
 
   if (!artifactDefinition) {
-    throw new Error("Artifact definition not found!");
+    return null;
   }
 
   const toolsByArtifactKind = artifactDefinition.toolbar;

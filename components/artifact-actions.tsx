@@ -1,7 +1,14 @@
-import { type Dispatch, memo, type SetStateAction, useState } from "react";
+import {
+  type Dispatch,
+  memo,
+  type SetStateAction,
+  useEffect,
+  useState,
+} from "react";
 import { toast } from "sonner";
+import { loadArtifact } from "@/components/artifacts/dynamic-loader";
 import { cn } from "@/lib/utils";
-import { artifactDefinitions, type UIArtifact } from "./artifact";
+import type { UIArtifact } from "./artifact";
 import type { ArtifactActionContext } from "./create-artifact";
 import { Button } from "./ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
@@ -27,12 +34,30 @@ function PureArtifactActions({
 }: ArtifactActionsProps) {
   const [isLoading, setIsLoading] = useState(false);
 
-  const artifactDefinition = artifactDefinitions.find(
-    (definition) => definition.kind === artifact.kind
+  const [artifactDefinition, setArtifactDefinition] = useState<any | null>(
+    null
   );
 
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const def = await loadArtifact(artifact.kind);
+        if (!cancelled) {
+          setArtifactDefinition(def);
+        }
+      } catch {
+        // ignore
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [artifact.kind]);
+
   if (!artifactDefinition) {
-    throw new Error("Artifact definition not found!");
+    return null;
   }
 
   const actionContext: ArtifactActionContext = {
@@ -47,7 +72,7 @@ function PureArtifactActions({
 
   return (
     <div className="flex flex-row gap-1">
-      {artifactDefinition.actions.map((action) => (
+      {artifactDefinition.actions.map((action: any) => (
         <Tooltip key={action.description}>
           <TooltipTrigger asChild>
             <Button

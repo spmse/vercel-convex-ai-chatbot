@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { guestRegex, isDevelopmentEnvironment } from "./lib/constants";
+import { FEATURE_GUEST_ACCOUNTS } from "./lib/feature-flags";
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -23,18 +24,30 @@ export async function middleware(request: NextRequest) {
     secureCookie: !isDevelopmentEnvironment,
   });
 
-  if (!token) {
-    const redirectUrl = encodeURIComponent(request.url);
+  const openAuthPaths = ["/login", "/register", "/login/form"];
 
-    return NextResponse.redirect(
-      new URL(`/api/auth/guest?redirectUrl=${redirectUrl}`, request.url)
-    );
+  if (!token) {
+    // Allow unauthenticated users to view auth pages without forced guest provisioning.
+    if (openAuthPaths.includes(pathname)) {
+      return NextResponse.next();
+    }
+    // Redirect all other unauthenticated requests to landing page (/login)
+    return NextResponse.redirect(new URL("/login", request.url));
   }
 
   const isGuest = guestRegex.test(token?.email ?? "");
 
-  if (token && !isGuest && ["/login", "/register"].includes(pathname)) {
+  if (
+    token &&
+    !isGuest &&
+    ["/login", "/register", "/login/form"].includes(pathname)
+  ) {
     return NextResponse.redirect(new URL("/", request.url));
+  }
+
+  // If guest accounts are disabled and the user is a guest, force upgrade path.
+  if (token && isGuest && !FEATURE_GUEST_ACCOUNTS) {
+    return NextResponse.redirect(new URL("/login", request.url));
   }
 
   return NextResponse.next();

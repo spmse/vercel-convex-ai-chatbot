@@ -22,14 +22,17 @@ test.describe
       while (request) {
         chain.unshift(request.url());
         const prev = request.redirectedFrom();
-        if (!prev) break;
+        if (!prev) {
+          break;
+        }
         request = prev;
       }
 
       expect(chain).toEqual([
         "http://localhost:3000/",
-        "http://localhost:3000/api/auth/guest?redirectUrl=http%3A%2F%2Flocalhost%3A3000%2F",
-        "http://localhost:3000/",
+        "http://localhost:3000/login",
+        // "http://localhost:3000/api/auth/guest?redirectUrl=http%3A%2F%2Flocalhost%3A3000%2F",
+        // "http://localhost:3000/",
       ]);
     });
 
@@ -66,7 +69,9 @@ test.describe
       while (request) {
         chain.unshift(request.url());
         const prev = request.redirectedFrom();
-        if (!prev) break;
+        if (!prev) {
+          break;
+        }
         request = prev;
       }
 

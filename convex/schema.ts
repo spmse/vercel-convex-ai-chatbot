@@ -36,6 +36,7 @@ export default defineSchema({
   }).index("by_chat_and_message", ["chatId", "messageId"]),
 
   documents: defineTable({
+    externalId: v.string(), // client-generated UUID
     title: v.string(),
     content: v.optional(v.string()),
     kind: v.union(
@@ -46,7 +47,9 @@ export default defineSchema({
     ),
     userId: v.id("users"),
     createdAt: v.number(),
-  }).index("by_user", ["userId"]),
+  })
+    .index("by_user", ["userId"])
+    .index("by_externalId", ["externalId"]),
 
   suggestions: defineTable({
     documentId: v.id("documents"),
