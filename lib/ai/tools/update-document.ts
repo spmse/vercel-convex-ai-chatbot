@@ -2,9 +2,9 @@ import { tool, type UIMessageStreamWriter } from "ai";
 import { fetchQuery } from "convex/nextjs";
 import type { Session } from "next-auth";
 import { z } from "zod";
+import { documentHandlersByArtifactKind } from "@/components/artifacts/registry";
 import { api } from "@/convex/_generated/api";
 import { resolveDocumentIdentifier } from "@/convex/documents";
-import { documentHandlersByArtifactKind } from "@/lib/artifacts/server";
 import type { ChatMessage } from "@/lib/types";
 
 type UpdateDocumentProps = {

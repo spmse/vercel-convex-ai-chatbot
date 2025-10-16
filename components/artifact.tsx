@@ -12,10 +12,7 @@ import {
 } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { useDebounceCallback, useWindowSize } from "usehooks-ts";
-import { codeArtifact } from "@/artifacts/code/client";
-import { imageArtifact } from "@/artifacts/image/client";
-import { sheetArtifact } from "@/artifacts/sheet/client";
-import { textArtifact } from "@/artifacts/text/client";
+import { loadArtifact } from "@/components/artifacts/dynamic-loader";
 import { useArtifact } from "@/hooks/use-artifact";
 import type { Document, Vote } from "@/lib/db/schema";
 import type { Attachment, ChatMessage } from "@/lib/types";
@@ -29,13 +26,7 @@ import { useSidebar } from "./ui/sidebar";
 import { VersionFooter } from "./version-footer";
 import type { VisibilityType } from "./visibility-selector";
 
-export const artifactDefinitions = [
-  textArtifact,
-  codeArtifact,
-  imageArtifact,
-  sheetArtifact,
-];
-export type ArtifactKind = (typeof artifactDefinitions)[number]["kind"];
+export type ArtifactKind = "text" | "code" | "image" | "sheet";
 
 export type UIArtifact = {
   title: string;
@@ -243,22 +234,56 @@ function PureArtifact({
   const { width: windowWidth, height: windowHeight } = useWindowSize();
   const isMobile = windowWidth ? windowWidth < 768 : false;
 
-  const artifactDefinition = artifactDefinitions.find(
-    (definition) => definition.kind === artifact.kind
+  const [artifactDefinition, setArtifactDefinition] = useState<any | null>(
+    null
   );
-
-  if (!artifactDefinition) {
-    throw new Error("Artifact definition not found!");
-  }
+  const [isArtifactLoading, setIsArtifactLoading] = useState(false);
 
   useEffect(() => {
-    if (artifact.documentId !== "init" && artifactDefinition.initialize) {
+    let cancelled = false;
+    async function ensureArtifactLoaded() {
+      if (!artifact.kind) {
+        return;
+      }
+      setIsArtifactLoading(true);
+      try {
+        const def = await loadArtifact(artifact.kind);
+        if (!cancelled) {
+          setArtifactDefinition(def);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsArtifactLoading(false);
+        }
+      }
+    }
+    ensureArtifactLoaded();
+    return () => {
+      cancelled = true;
+    };
+  }, [artifact.kind]);
+
+  // Always run initialization effect; guard inside.
+  useEffect(() => {
+    if (
+      artifactDefinition &&
+      artifact.documentId !== "init" &&
+      artifactDefinition.initialize
+    ) {
       artifactDefinition.initialize({
         documentId: artifact.documentId,
         setMetadata,
       });
     }
   }, [artifact.documentId, artifactDefinition, setMetadata]);
+
+  if (!artifactDefinition) {
+    return (
+      <div className="flex h-40 items-center justify-center text-muted-foreground text-xs">
+        {isArtifactLoading ? "Loading artifact..." : "Preparing artifact..."}
+      </div>
+    );
+  }
 
   return (
     <AnimatePresence>

@@ -4,7 +4,7 @@ import { z } from "zod";
 import {
   artifactKinds,
   documentHandlersByArtifactKind,
-} from "@/lib/artifacts/server";
+} from "@/components/artifacts/registry";
 import type { ChatMessage } from "@/lib/types";
 import { generateUUID } from "@/lib/utils";
 
