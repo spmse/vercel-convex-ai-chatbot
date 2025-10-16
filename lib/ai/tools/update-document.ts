@@ -1,8 +1,10 @@
 import { tool, type UIMessageStreamWriter } from "ai";
+import { fetchQuery } from "convex/nextjs";
 import type { Session } from "next-auth";
 import { z } from "zod";
+import { api } from "@/convex/_generated/api";
+import { resolveDocumentIdentifier } from "@/convex/documents";
 import { documentHandlersByArtifactKind } from "@/lib/artifacts/server";
-import { getDocumentById } from "@/lib/db/queries";
 import type { ChatMessage } from "@/lib/types";
 
 type UpdateDocumentProps = {
@@ -20,7 +22,25 @@ export const updateDocument = ({ session, dataStream }: UpdateDocumentProps) =>
         .describe("The description of changes that need to be made"),
     }),
     execute: async ({ id, description }) => {
-      const document = await getDocumentById({ id });
+      let raw = await fetchQuery(api.documents.getDocumentByExternalId, {
+        externalId: id,
+      });
+      if (!raw) {
+        const internalId = await resolveDocumentIdentifier(id);
+        if (internalId) {
+          raw = await fetchQuery(api.documents.getDocumentById, {
+            id: internalId,
+          });
+        }
+      }
+      const document = raw
+        ? {
+            ...raw,
+            id: raw._id,
+            content: raw.content || "",
+            createdAt: new Date(raw.createdAt),
+          }
+        : null;
 
       if (!document) {
         return {

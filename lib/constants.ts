@@ -11,3 +11,13 @@ export const isTestEnvironment = Boolean(
 export const guestRegex = /^guest-\d+$/;
 
 export const DUMMY_PASSWORD = generateDummyPassword();
+
+// Shared file upload constraints
+// Keep server & client in sync (import these on server route and client uploader)
+export const ALLOWED_UPLOAD_MIME_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+] as const;
+export const MAX_UPLOAD_SIZE_BYTES = 7 * 1024 * 1024; // 7MB
+export const MAX_UPLOAD_SIZE_LABEL = "7MB"; // for user-facing messages

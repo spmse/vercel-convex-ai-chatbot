@@ -1,10 +1,11 @@
 import type { UIMessageStreamWriter } from "ai";
+import { fetchMutation } from "convex/nextjs";
 import type { Session } from "next-auth";
 import { codeDocumentHandler } from "@/artifacts/code/server";
 import { sheetDocumentHandler } from "@/artifacts/sheet/server";
 import { textDocumentHandler } from "@/artifacts/text/server";
 import type { ArtifactKind } from "@/components/artifact";
-import { saveDocument } from "../db/queries";
+import { api } from "@/convex/_generated/api";
 import type { Document } from "../db/schema";
 import type { ChatMessage } from "../types";
 
@@ -52,12 +53,12 @@ export function createDocumentHandler<T extends ArtifactKind>(config: {
       });
 
       if (args.session?.user?.id) {
-        await saveDocument({
-          id: args.id,
+        await fetchMutation(api.documents.saveDocument, {
+          externalId: args.id,
           title: args.title,
           content: draftContent,
           kind: config.kind,
-          userId: args.session.user.id,
+          userId: args.session.user.id as any,
         });
       }
 
@@ -72,12 +73,12 @@ export function createDocumentHandler<T extends ArtifactKind>(config: {
       });
 
       if (args.session?.user?.id) {
-        await saveDocument({
-          id: args.document.id,
+        await fetchMutation(api.documents.saveDocument, {
+          externalId: args.document.id,
           title: args.document.title,
           content: draftContent,
           kind: config.kind,
-          userId: args.session.user.id,
+          userId: args.session.user.id as any,
         });
       }
 
