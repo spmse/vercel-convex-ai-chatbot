@@ -144,6 +144,35 @@ Update both sides by editing `lib/constants.ts` if constraints change.
 | `PLAYWRIGHT_TEST_BASE_URL` | Base URL used during Playwright tests (optional). |
 | `PORT` | Custom dev server port (optional). |
 
+## Feature Flags
+
+All feature flags follow the pattern `APP_ENABLE_<FEATURE>` and default to disabled when absent or set to a falsy value (`0`, `false`, `off`, `no`, empty).
+
+| Flag | Description | Env Var | Default |
+|------|-------------|---------|---------|
+| Guest Accounts | Allow automatic provisioning + guest sign-in flow | `APP_ENABLE_GUEST_ACCOUNTS` | false |
+| Share Conversations | Enable public visibility and sharing toggle for chats | `APP_ENABLE_SHARE_CONVERSATIONS` | false |
+| Upload Files | Allow uploading attachments in chat input | `APP_ENABLE_UPLOAD_FILES` | false |
+| Weather Tool | Activate the `getWeather` tool (UI + model tool calls) | `APP_ENABLE_WEATHER_TOOL` | false |
+
+Truthy values: `1`, `true`, `on`, `yes` (case-insensitive). Any other non-empty value is treated as enabled for forward compatibility.
+
+Example `.env.local` snippet:
+
+```bash
+APP_ENABLE_GUEST_ACCOUNTS=true
+APP_ENABLE_SHARE_CONVERSATIONS=1
+APP_ENABLE_UPLOAD_FILES=on
+APP_ENABLE_WEATHER_TOOL=yes
+```
+
+When a feature is disabled:
+* UI elements are hidden (e.g., file upload button, share dropdown, weather tool output).
+* Server routes/actions enforce gating (guest session creation, file uploads, chat visibility changes, weather tool invocation).
+* Attempts to access disabled server functionality return a structured `forbidden:feature` error.
+
+Implementation details are in `lib/feature-flags.tsx`.
+
 Create `.env.local` from `.env.example` and supply these as needed.
 
 ## Scripts

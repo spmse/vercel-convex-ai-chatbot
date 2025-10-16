@@ -32,6 +32,7 @@ import { requestSuggestions } from "@/lib/ai/tools/request-suggestions";
 import { updateDocument } from "@/lib/ai/tools/update-document";
 import { isProductionEnvironment } from "@/lib/constants";
 import { ChatSDKError } from "@/lib/errors";
+import { FEATURE_WEATHER_TOOL } from "@/lib/feature-flags";
 import type { ChatMessage } from "@/lib/types";
 import type { AppUsage } from "@/lib/usage";
 import { convertToUIMessages, generateUUID } from "@/lib/utils";
@@ -215,15 +216,20 @@ export async function POST(request: Request) {
           experimental_activeTools:
             selectedChatModel === "chat-model-reasoning"
               ? []
-              : [
-                  "getWeather",
+              : ([
+                  ...(FEATURE_WEATHER_TOOL ? ["getWeather"] : []),
                   "createDocument",
                   "updateDocument",
                   "requestSuggestions",
-                ],
+                ] as (
+                  | "getWeather"
+                  | "createDocument"
+                  | "updateDocument"
+                  | "requestSuggestions"
+                )[]),
           experimental_transform: smoothStream({ chunking: "word" }),
           tools: {
-            getWeather,
+            ...(FEATURE_WEATHER_TOOL ? { getWeather } : {}),
             createDocument: createDocument({ session, dataStream }),
             updateDocument: updateDocument({ session, dataStream }),
             requestSuggestions: requestSuggestions({

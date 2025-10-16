@@ -65,6 +65,13 @@ export default defineConfig({
         ...devices["Desktop Chrome"],
       },
     },
+    {
+      name: "unit",
+      testMatch: /e2e\/feature-flags\.test\.ts/,
+      use: {
+        ...devices["Desktop Chrome"],
+      },
+    },
 
     // {
     //   name: 'firefox',

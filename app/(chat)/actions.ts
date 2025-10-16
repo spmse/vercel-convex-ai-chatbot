@@ -8,6 +8,8 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { resolveChatIdentifier } from "@/convex/chats";
 import { myProvider } from "@/lib/ai/providers";
+import { ChatSDKError } from "@/lib/errors";
+import { FEATURE_SHARE_CONVERSATIONS } from "@/lib/feature-flags";
 
 export async function saveChatModelAsCookie(model: string) {
   const cookieStore = await cookies();
@@ -53,6 +55,12 @@ export async function updateChatVisibility({
   chatId: string;
   visibility: VisibilityType;
 }) {
+  if (!FEATURE_SHARE_CONVERSATIONS && visibility === "public") {
+    throw new ChatSDKError(
+      "forbidden:feature",
+      "Conversation sharing disabled."
+    );
+  }
   const internalId = await resolveChatIdentifier(chatId);
   if (!internalId) {
     return;

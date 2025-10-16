@@ -1,5 +1,5 @@
-import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { mutation, query } from "./_generated/server";
 
 export const generateUploadUrl = mutation({
   handler: async (ctx) => {
@@ -35,7 +35,7 @@ export const getFile = query({
     if (!file) {
       return null;
     }
-    
+
     const url = await ctx.storage.getUrl(file.storageId);
     return {
       ...file,
@@ -52,14 +52,14 @@ export const getFilesByUserId = query({
       .withIndex("by_user", (q) => q.eq("userId", args.userId))
       .order("desc")
       .collect();
-    
+
     const filesWithUrls = await Promise.all(
       files.map(async (file) => {
         const url = await ctx.storage.getUrl(file.storageId);
         return { ...file, url };
       })
     );
-    
+
     return filesWithUrls;
   },
 });
@@ -71,10 +71,10 @@ export const deleteFile = mutation({
     if (!file) {
       throw new Error("File not found");
     }
-    
+
     // Delete from storage
     await ctx.storage.delete(file.storageId);
-    
+
     // Delete from database
     await ctx.db.delete(args.id);
   },

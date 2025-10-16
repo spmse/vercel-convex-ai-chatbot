@@ -1,76 +1,53 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useSession } from "next-auth/react";
-import { useActionState, useEffect, useState } from "react";
+import { useFeatureFlags } from "@/hooks/use-feature-flags";
 
-import { AuthForm } from "@/components/auth-form";
-import { SubmitButton } from "@/components/submit-button";
-import { toast } from "@/components/toast";
-import { type LoginActionState, login } from "../actions";
-
-export default function Page() {
-  const router = useRouter();
-
-  const [email, setEmail] = useState("");
-  const [isSuccessful, setIsSuccessful] = useState(false);
-
-  const [state, formAction] = useActionState<LoginActionState, FormData>(
-    login,
-    {
-      status: "idle",
-    }
-  );
-
-  const { update: updateSession } = useSession();
-
-  useEffect(() => {
-    if (state.status === "failed") {
-      toast({
-        type: "error",
-        description: "Invalid credentials!",
-      });
-    } else if (state.status === "invalid_data") {
-      toast({
-        type: "error",
-        description: "Failed validating your submission!",
-      });
-    } else if (state.status === "success") {
-      setIsSuccessful(true);
-      updateSession();
-      router.refresh();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.status, router.refresh, updateSession]);
-
-  const handleSubmit = (formData: FormData) => {
-    setEmail(formData.get("email") as string);
-    formAction(formData);
-  };
-
+function ProceedAsGuestButton() {
+  const { guestAccounts } = useFeatureFlags();
   return (
-    <div className="flex h-dvh w-screen items-start justify-center bg-background pt-12 md:items-center md:pt-0">
-      <div className="flex w-full max-w-md flex-col gap-12 overflow-hidden rounded-2xl">
-        <div className="flex flex-col items-center justify-center gap-2 px-4 text-center sm:px-16">
-          <h3 className="font-semibold text-xl dark:text-zinc-50">Sign In</h3>
-          <p className="text-gray-500 text-sm dark:text-zinc-400">
-            Use your email and password to sign in
-          </p>
+    <button
+      className="rounded-md border px-4 py-2 font-medium text-sm transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+      disabled={!guestAccounts}
+      onClick={() => {
+        if (!guestAccounts) {
+          return;
+        }
+        window.location.href = "/api/auth/guest?redirectUrl=/";
+      }}
+      type="button"
+    >
+      Proceed as Guest
+    </button>
+  );
+}
+
+export default function LoginLandingPage() {
+  return (
+    <div className="flex h-dvh w-screen items-center justify-center bg-background p-6">
+      <div className="flex w-full max-w-md flex-col items-center gap-6 rounded-2xl border bg-card p-8 text-center shadow-sm">
+        <h1 className="font-semibold text-xl">Welcome</h1>
+        <p className="text-muted-foreground text-sm">
+          Choose how you would like to continue.
+        </p>
+        <div className="flex w-full flex-col gap-3">
+          <Link
+            className="rounded-md border px-4 py-2 font-medium text-sm transition-colors hover:bg-accent"
+            href="/login/form"
+          >
+            Email / Password Login
+          </Link>
+          <Link
+            className="rounded-md border px-4 py-2 font-medium text-sm transition-colors hover:bg-accent"
+            href="/register"
+          >
+            Create Account
+          </Link>
+          <ProceedAsGuestButton />
         </div>
-        <AuthForm action={handleSubmit} defaultEmail={email}>
-          <SubmitButton isSuccessful={isSuccessful}>Sign in</SubmitButton>
-          <p className="mt-4 text-center text-gray-600 text-sm dark:text-zinc-400">
-            {"Don't have an account? "}
-            <Link
-              className="font-semibold text-gray-800 hover:underline dark:text-zinc-200"
-              href="/register"
-            >
-              Sign up
-            </Link>
-            {" for free."}
-          </p>
-        </AuthForm>
+        <div className="mt-4 text-muted-foreground text-xs">
+          Guest accounts are temporary. Create an account to retain history.
+        </div>
       </div>
     </div>
   );

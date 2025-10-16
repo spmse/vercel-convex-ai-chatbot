@@ -9,6 +9,8 @@ import {
   MAX_UPLOAD_SIZE_BYTES,
   MAX_UPLOAD_SIZE_LABEL,
 } from "@/lib/constants";
+import { ChatSDKError } from "@/lib/errors";
+import { FEATURE_UPLOAD_FILES } from "@/lib/feature-flags";
 
 // Use Blob instead of File for validation (Edge / Node forms)
 const FileSchema = z.object({
@@ -27,6 +29,13 @@ export async function POST(request: Request) {
 
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (!FEATURE_UPLOAD_FILES) {
+    return new ChatSDKError(
+      "forbidden:feature",
+      "File uploads disabled."
+    ).toResponse();
   }
 
   if (request.body === null) {
