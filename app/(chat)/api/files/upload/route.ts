@@ -4,17 +4,21 @@ import { z } from "zod";
 
 import { auth } from "@/app/(auth)/auth";
 import { api } from "@/convex/_generated/api";
+import {
+  ALLOWED_UPLOAD_MIME_TYPES,
+  MAX_UPLOAD_SIZE_BYTES,
+  MAX_UPLOAD_SIZE_LABEL,
+} from "@/lib/constants";
 
-// Use Blob instead of File since File is not available in Node.js environment
+// Use Blob instead of File for validation (Edge / Node forms)
 const FileSchema = z.object({
   file: z
     .instanceof(Blob)
-    .refine((file) => file.size <= 5 * 1024 * 1024, {
-      message: "File size should be less than 5MB",
+    .refine((file) => file.size <= MAX_UPLOAD_SIZE_BYTES, {
+      message: `File size must be <= ${MAX_UPLOAD_SIZE_LABEL}`,
     })
-    // Update the file type based on the kind of files you want to accept
-    .refine((file) => ["image/jpeg", "image/png"].includes(file.type), {
-      message: "File type should be JPEG or PNG",
+    .refine((file) => ALLOWED_UPLOAD_MIME_TYPES.includes(file.type as any), {
+      message: `Unsupported file type. Allowed: ${ALLOWED_UPLOAD_MIME_TYPES.join(", ")}`,
     }),
 });
 
@@ -31,39 +35,46 @@ export async function POST(request: Request) {
 
   try {
     const formData = await request.formData();
-    const file = formData.get("file") as Blob;
-
-    if (!file) {
-      return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
+    const original = formData.get("file");
+    if (!original) {
+      return NextResponse.json(
+        { error: "No file uploaded", code: "no_file" },
+        { status: 400 }
+      );
     }
-
+    const file = original as Blob; // Validation target
     const validatedFile = FileSchema.safeParse({ file });
 
     if (!validatedFile.success) {
       const errorMessage = validatedFile.error.errors
-        .map((error) => error.message)
+        .map((e) => e.message)
         .join(", ");
-
-      return NextResponse.json({ error: errorMessage }, { status: 400 });
+      return NextResponse.json(
+        { error: errorMessage, code: "validation_failed" },
+        { status: 400 }
+      );
     }
-
-    // Get filename from formData since Blob doesn't have name property
-    const filename = (formData.get("file") as File).name;
-    const fileBuffer = await file.arrayBuffer();
+    // Derive filename: if File present use its name, else synthesize
+    const filenameCandidate = (original as any)?.name as string | undefined;
+    const extension = file.type.split("/")[1] || "bin";
+    const filename =
+      filenameCandidate && filenameCandidate.length > 0
+        ? filenameCandidate
+        : `upload-${Date.now()}.${extension}`;
 
     try {
       // Generate upload URL for Convex
       const uploadUrl = await fetchMutation(api.files.generateUploadUrl);
-      
+
       // Upload file to Convex storage
       const result = await fetch(uploadUrl, {
         method: "POST",
         headers: { "Content-Type": file.type },
         body: file,
       });
-      
+
       const { storageId } = await result.json();
-      
+
       // Save file metadata to database
       const fileId = await fetchMutation(api.files.saveFile, {
         storageId,
@@ -76,17 +87,24 @@ export async function POST(request: Request) {
       return NextResponse.json({
         storageId,
         fileId,
-        url: uploadUrl, // This will be replaced with actual file URL when retrieved
+        url: uploadUrl, // Signed URL for upload; fetch actual URL later via getFile
         size: file.size,
         type: file.type,
         name: filename,
+        pathname: filename, // match client expectation
+        contentType: file.type,
+        maxSize: MAX_UPLOAD_SIZE_BYTES,
+        allowed: ALLOWED_UPLOAD_MIME_TYPES,
       });
     } catch (_error) {
-      return NextResponse.json({ error: "Upload failed" }, { status: 500 });
+      return NextResponse.json(
+        { error: "Upload failed", code: "upload_failed" },
+        { status: 500 }
+      );
     }
   } catch (_error) {
     return NextResponse.json(
-      { error: "Failed to process request" },
+      { error: "Failed to process request", code: "processing_failed" },
       { status: 500 }
     );
   }

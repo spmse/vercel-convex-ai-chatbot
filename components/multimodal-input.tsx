@@ -22,6 +22,11 @@ import { saveChatModelAsCookie } from "@/app/(chat)/actions";
 import { SelectItem } from "@/components/ui/select";
 import { chatModels } from "@/lib/ai/models";
 import { myProvider } from "@/lib/ai/providers";
+import {
+  ALLOWED_UPLOAD_MIME_TYPES,
+  MAX_UPLOAD_SIZE_BYTES,
+  MAX_UPLOAD_SIZE_LABEL,
+} from "@/lib/constants";
 import type { Attachment, ChatMessage } from "@/lib/types";
 import type { AppUsage } from "@/lib/usage";
 import { cn } from "@/lib/utils";
@@ -210,10 +215,36 @@ function PureMultimodalInput({
     async (event: ChangeEvent<HTMLInputElement>) => {
       const files = Array.from(event.target.files || []);
 
-      setUploadQueue(files.map((file) => file.name));
+      // Client-side validation before attempting uploads
+      const validFiles: File[] = [];
+      for (const file of files) {
+        if (!ALLOWED_UPLOAD_MIME_TYPES.includes(file.type as any)) {
+          toast.error(
+            `Unsupported file type: ${file.type || file.name}. Allowed: ${ALLOWED_UPLOAD_MIME_TYPES.join(", ")}`
+          );
+          continue;
+        }
+        if (file.size > MAX_UPLOAD_SIZE_BYTES) {
+          toast.error(
+            `File too large: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)}MB). Max ${MAX_UPLOAD_SIZE_LABEL}.`
+          );
+          continue;
+        }
+        validFiles.push(file);
+      }
+
+      if (validFiles.length === 0) {
+        // Reset input so same file can be re-selected
+        if (fileInputRef.current) {
+          fileInputRef.current.value = "";
+        }
+        return;
+      }
+
+      setUploadQueue(validFiles.map((file) => file.name));
 
       try {
-        const uploadPromises = files.map((file) => uploadFile(file));
+        const uploadPromises = validFiles.map((file) => uploadFile(file));
         const uploadedAttachments = await Promise.all(uploadPromises);
         const successfullyUploadedAttachments = uploadedAttachments.filter(
           (attachment) => attachment !== undefined
@@ -245,6 +276,7 @@ function PureMultimodalInput({
         )}
 
       <input
+        accept={ALLOWED_UPLOAD_MIME_TYPES.join(",")}
         className="-top-4 -left-4 pointer-events-none fixed size-0.5 opacity-0"
         multiple
         onChange={handleFileChange}

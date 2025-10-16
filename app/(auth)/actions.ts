@@ -1,8 +1,9 @@
 "use server";
 
+import { fetchMutation, fetchQuery } from "convex/nextjs";
 import { z } from "zod";
-
-import { createUser, getUser } from "@/lib/db/convex-queries";
+import { api } from "@/convex/_generated/api";
+import { generateHashedPassword } from "@/lib/db/utils";
 
 import { signIn } from "./auth";
 
@@ -61,12 +62,17 @@ export const register = async (
       password: formData.get("password"),
     });
 
-    const [user] = await getUser(validatedData.email);
-
-    if (user) {
+    const existing = await fetchQuery(api.users.getUserByEmail, {
+      email: validatedData.email,
+    });
+    if (existing) {
       return { status: "user_exists" } as RegisterActionState;
     }
-    await createUser(validatedData.email, validatedData.password);
+    await fetchMutation(api.users.createUser, {
+      email: validatedData.email,
+      password: generateHashedPassword(validatedData.password),
+      type: "regular",
+    });
     await signIn("credentials", {
       email: validatedData.email,
       password: validatedData.password,

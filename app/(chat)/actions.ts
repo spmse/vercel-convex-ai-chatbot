@@ -1,14 +1,13 @@
 "use server";
 
 import { generateText, type UIMessage } from "ai";
+import { fetchMutation, fetchQuery } from "convex/nextjs";
 import { cookies } from "next/headers";
 import type { VisibilityType } from "@/components/visibility-selector";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
+import { resolveChatIdentifier } from "@/convex/chats";
 import { myProvider } from "@/lib/ai/providers";
-import {
-  deleteMessagesByChatIdAfterTimestamp,
-  getMessageById,
-  updateChatVisiblityById,
-} from "@/lib/db/convex-queries";
 
 export async function saveChatModelAsCookie(model: string) {
   const cookieStore = await cookies();
@@ -34,10 +33,15 @@ export async function generateTitleFromUserMessage({
 }
 
 export async function deleteTrailingMessages({ id }: { id: string }) {
-  const [message] = await getMessageById({ id });
+  const message = await fetchQuery(api.messages.getMessageById, {
+    id: id as Id<"messages">,
+  });
 
-  await deleteMessagesByChatIdAfterTimestamp({
-    chatId: message.chatId,
+  if (!message) {
+    return;
+  }
+  await fetchMutation(api.messages.deleteMessagesByChatIdAfterTimestamp, {
+    chatId: message.chatId as Id<"chats">,
     timestamp: message.createdAt,
   });
 }
@@ -49,5 +53,12 @@ export async function updateChatVisibility({
   chatId: string;
   visibility: VisibilityType;
 }) {
-  await updateChatVisiblityById({ chatId, visibility });
+  const internalId = await resolveChatIdentifier(chatId);
+  if (!internalId) {
+    return;
+  }
+  await fetchMutation(api.chats.updateChatVisibility, {
+    chatId: internalId,
+    visibility,
+  });
 }

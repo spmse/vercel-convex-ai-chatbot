@@ -1,10 +1,8 @@
+import { fetchMutation, fetchQuery } from "convex/nextjs";
 import { auth } from "@/app/(auth)/auth";
 import type { ArtifactKind } from "@/components/artifact";
-import {
-  deleteDocumentsByIdAfterTimestamp,
-  getDocumentsById,
-  saveDocument,
-} from "@/lib/db/queries";
+import { api } from "@/convex/_generated/api";
+import { resolveDocumentIdentifier } from "@/convex/documents";
 import { ChatSDKError } from "@/lib/errors";
 
 export async function GET(request: Request) {
@@ -24,9 +22,18 @@ export async function GET(request: Request) {
     return new ChatSDKError("unauthorized:document").toResponse();
   }
 
-  const documents = await getDocumentsById({ id });
-
-  const [document] = documents;
+  // Try external id first
+  let document = await fetchQuery(api.documents.getDocumentByExternalId, {
+    externalId: id,
+  });
+  if (!document) {
+    const internalId = await resolveDocumentIdentifier(id);
+    if (internalId) {
+      document = await fetchQuery(api.documents.getDocumentById, {
+        id: internalId,
+      });
+    }
+  }
 
   if (!document) {
     return new ChatSDKError("not_found:document").toResponse();
@@ -36,7 +43,9 @@ export async function GET(request: Request) {
     return new ChatSDKError("forbidden:document").toResponse();
   }
 
-  return Response.json(documents, { status: 200 });
+  return Response.json([
+    { ...document, id: document._id, userId: document.userId },
+  ]);
 }
 
 export async function POST(request: Request) {
@@ -63,25 +72,37 @@ export async function POST(request: Request) {
   }: { content: string; title: string; kind: ArtifactKind } =
     await request.json();
 
-  const documents = await getDocumentsById({ id });
-
-  if (documents.length > 0) {
-    const [doc] = documents;
-
-    if (doc.userId !== session.user.id) {
-      return new ChatSDKError("forbidden:document").toResponse();
+  let existing = await fetchQuery(api.documents.getDocumentByExternalId, {
+    externalId: id,
+  });
+  if (!existing) {
+    const internalId = await resolveDocumentIdentifier(id);
+    if (internalId) {
+      existing = await fetchQuery(api.documents.getDocumentById, {
+        id: internalId,
+      });
     }
   }
-
-  const document = await saveDocument({
-    id,
-    content,
+  if (existing && existing.userId !== (session.user.id as any)) {
+    return new ChatSDKError("forbidden:document").toResponse();
+  }
+  if (!existing) {
+    await fetchMutation(api.documents.saveDocument, {
+      externalId: id,
+      title,
+      content,
+      kind,
+      userId: session.user.id as any,
+    });
+    return Response.json({ id, title, kind, content }, { status: 200 });
+  }
+  // update path
+  await fetchMutation(api.documents.updateDocument, {
+    id: existing._id,
     title,
-    kind,
-    userId: session.user.id,
+    content,
   });
-
-  return Response.json(document, { status: 200 });
+  return Response.json({ id, title, kind, content }, { status: 200 });
 }
 
 export async function DELETE(request: Request) {
@@ -109,18 +130,28 @@ export async function DELETE(request: Request) {
     return new ChatSDKError("unauthorized:document").toResponse();
   }
 
-  const documents = await getDocumentsById({ id });
-
-  const [document] = documents;
-
-  if (document.userId !== session.user.id) {
+  let document = await fetchQuery(api.documents.getDocumentByExternalId, {
+    externalId: id,
+  });
+  if (!document) {
+    const internalId = await resolveDocumentIdentifier(id);
+    if (internalId) {
+      document = await fetchQuery(api.documents.getDocumentById, {
+        id: internalId,
+      });
+    }
+  }
+  if (!document) {
+    return new ChatSDKError("not_found:document").toResponse();
+  }
+  if (document.userId !== (session.user.id as any)) {
     return new ChatSDKError("forbidden:document").toResponse();
   }
-
-  const documentsDeleted = await deleteDocumentsByIdAfterTimestamp({
-    id,
-    timestamp: new Date(timestamp),
-  });
-
-  return Response.json(documentsDeleted, { status: 200 });
+  if (document.createdAt > new Date(timestamp).getTime()) {
+    await fetchMutation(api.documents.deleteDocumentById, {
+      id: document._id,
+    });
+    return Response.json({ id }, { status: 200 });
+  }
+  return Response.json({ id, deleted: false }, { status: 200 });
 }
