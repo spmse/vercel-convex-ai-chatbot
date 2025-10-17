@@ -24,14 +24,15 @@ export async function middleware(request: NextRequest) {
     secureCookie: !isDevelopmentEnvironment,
   });
 
-  const openAuthPaths = ["/login", "/register", "/login/form"];
+  // Paths that are allowed without authentication (public)
+  const openAuthPaths = ["/", "/login", "/register", "/login/form"]; // include landing page
 
   if (!token) {
-    // Allow unauthenticated users to view auth pages without forced guest provisioning.
+    // Allow unauthenticated users to view landing + auth pages.
     if (openAuthPaths.includes(pathname)) {
       return NextResponse.next();
     }
-    // Redirect all other unauthenticated requests to landing page (/login)
+    // For any other protected path, send to login.
     return NextResponse.redirect(new URL("/login", request.url));
   }
 

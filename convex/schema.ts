@@ -9,6 +9,15 @@ export default defineSchema({
     createdAt: v.number(),
     type: v.union(v.literal("guest"), v.literal("regular")),
   }).index("by_email", ["email"]),
+  // Newsletter subscribers
+  subscribers: defineTable({
+    email: v.string(),
+    createdAt: v.number(),
+    confirmed: v.boolean(),
+    unsubscribeToken: v.string(),
+  })
+    .index("by_email", ["email"])
+    .index("by_token", ["unsubscribeToken"]),
 
   chats: defineTable({
     externalId: v.string(), // client-generated UUID
