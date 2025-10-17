@@ -6,22 +6,16 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { ConvexClientProvider } from "@/lib/convex-provider";
 import { auth } from "../(auth)/auth";
 
+// Removed route group parentheses to avoid manifest mismatch.
 export const experimental_ppr = true;
 
-export default async function Layout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default async function Layout({ children }: { children: React.ReactNode }) {
   const [session, cookieStore] = await Promise.all([auth(), cookies()]);
   const isCollapsed = cookieStore.get("sidebar_state")?.value !== "true";
 
   return (
     <>
-      <Script
-        src="https://cdn.jsdelivr.net/pyodide/v0.23.4/full/pyodide.js"
-        strategy="beforeInteractive"
-      />
+      <Script src="https://cdn.jsdelivr.net/pyodide/v0.23.4/full/pyodide.js" strategy="beforeInteractive" />
       <ConvexClientProvider>
         <DataStreamProvider>
           <SidebarProvider defaultOpen={!isCollapsed}>

@@ -12,7 +12,6 @@ import { convertToUIMessages } from "@/lib/utils";
 export default async function Page(props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   const { id } = params;
-  // External first, fallback to internal only if non-UUID
   let chat: any = await fetchQuery(api.chats.getChatByExternalId, {
     externalId: id,
   });
@@ -20,7 +19,7 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
     try {
       chat = await fetchQuery(api.chats.getChatById, { id: id as any });
     } catch (_) {
-      // ignore invalid internal id fetch
+      // ignore invalid internal id format
     }
   }
   const normalizeChat = (c: any) =>
@@ -28,27 +27,21 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
       ? { ...c, id: c.externalId || c._id, createdAt: new Date(c.createdAt) }
       : null;
   chat = normalizeChat(chat);
-
   if (!chat) {
     notFound();
   }
-
   const session = await auth();
-
   if (!session) {
     redirect("/api/auth/guest");
   }
-
   if (chat.visibility === "private") {
     if (!session.user) {
       return notFound();
     }
-
     if (session.user.id !== chat.userId) {
       return notFound();
     }
   }
-
   let messagesFromDb: any[] = await fetchQuery(
     api.messages.getMessagesByExternalChatId,
     { externalId: id }
@@ -72,10 +65,8 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
     createdAt: new Date(m.createdAt),
   }));
   const uiMessages = convertToUIMessages(normalizedMessages);
-
   const cookieStore = await cookies();
   const chatModelFromCookie = cookieStore.get("chat-model");
-
   if (!chatModelFromCookie) {
     return (
       <>
@@ -92,7 +83,6 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
       </>
     );
   }
-
   return (
     <>
       <Chat
