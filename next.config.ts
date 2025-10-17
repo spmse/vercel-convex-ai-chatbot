@@ -1,9 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  experimental: {
-    ppr: true,
-  },
+  // Disabled experimental PPR to test deployment manifest generation reliability on Vercel.
+  // experimental: { ppr: true },
   images: {
     remotePatterns: [
       {
