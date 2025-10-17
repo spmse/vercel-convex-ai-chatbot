@@ -209,6 +209,10 @@ Create `.env.local` from `.env.example` and supply these as needed.
 ---
 If you discover an inconsistency or missing section, feel free to open an issue or PR.
 
+## Additional Docs
+
+See `docs/landing.md` for details about the unauthenticated landing page, animated hero, newsletter subscription flow (double opt-in with Convex), and roadmap component structure.
+
 ## Model Providers
 
 This template uses the [Vercel AI Gateway](https://vercel.com/docs/ai-gateway) to access multiple AI models through a unified interface. The default configuration includes [xAI](https://x.ai) models (`grok-2-vision-1212`, `grok-3-mini`) routed through the gateway.

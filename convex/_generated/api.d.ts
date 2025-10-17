@@ -19,6 +19,7 @@ import type * as documents from "../documents.js";
 import type * as files from "../files.js";
 import type * as http from "../http.js";
 import type * as messages from "../messages.js";
+import type * as newsletter from "../newsletter.js";
 import type * as stats from "../stats.js";
 import type * as streams from "../streams.js";
 import type * as suggestions from "../suggestions.js";
@@ -40,6 +41,7 @@ declare const fullApi: ApiFromModules<{
   files: typeof files;
   http: typeof http;
   messages: typeof messages;
+  newsletter: typeof newsletter;
   stats: typeof stats;
   streams: typeof streams;
   suggestions: typeof suggestions;
